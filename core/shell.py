@@ -448,15 +448,16 @@ def Main(
     cflow_builtin = cmd_eval.ControlFlowBuiltin(mem, exec_opts, tracer, errfmt)
     cmd_deps.cflow_builtin = cflow_builtin
 
-    now = time_.time()
-    iso_stamp = time_.strftime("%Y-%m-%d %H:%M:%S", time_.localtime(now))
-
-    argv_buf = mylib.BufWriter()
-    dev.PrintShellArgv(arg_r.argv, argv_buf)
-
-    debug_f.writeln('%s [%d] Oils started with argv %s' %
-                    (iso_stamp, my_pid, argv_buf.getvalue()))
     if len(debug_path):
+        now = time_.time()
+        iso_stamp = time_.strftime("%Y-%m-%d %H:%M:%S",
+                                   time_.localtime(now))
+
+        argv_buf = mylib.BufWriter()
+        dev.PrintShellArgv(arg_r.argv, argv_buf)
+
+        debug_f.writeln('%s [%d] Oils started with argv %s' %
+                        (iso_stamp, my_pid, argv_buf.getvalue()))
         debug_f.writeln('Writing logs to %r' % debug_path)
 
     interp = environ.get('OILS_HIJACK_SHEBANG', '')
