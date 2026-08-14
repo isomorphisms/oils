@@ -306,6 +306,10 @@ class MultiTracer(object):
         # or something.
         self.hist_argv0 = {}  # type: Dict[str, int]
 
+    def Enabled(self):
+        # type: () -> bool
+        return len(self.out_dir) != 0
+
     def OnNewProcess(self, child_pid):
         # type: (int) -> None
         """
@@ -315,6 +319,9 @@ class MultiTracer(object):
 
         TODO: do we need a compound PID?
         """
+        if not self.Enabled():
+            return
+
         self.this_pid = child_pid
         # each process keep track of direct children
         self.hist_argv0.clear()
@@ -333,7 +340,7 @@ class MultiTracer(object):
 
     def WriteDumps(self):
         # type: () -> None
-        if len(self.out_dir) == 0:
+        if not self.Enabled():
             return
 
         # TSV8 table might be nicer for this
@@ -518,13 +525,14 @@ class Tracer(object):
         In parent, Process::StartProcess calls us with child PID
         """
         UP_why = why
-        with tagswitch(why) as case:
-            if case(trace_e.External):
-                why = cast(trace.External, UP_why)
+        if self.multi_trace.Enabled():
+            with tagswitch(why) as case:
+                if case(trace_e.External):
+                    why = cast(trace.External, UP_why)
 
-                # There is the empty argv case of $(true), but it's never external
-                assert len(why.argv) > 0
-                self.multi_trace.EmitArgv0(why.argv[0])
+                    # There is the empty argv case of $(true), but it's never external
+                    assert len(why.argv) > 0
+                    self.multi_trace.EmitArgv0(why.argv[0])
 
         buf = self._RichTraceBegin('|')
         if not buf:
