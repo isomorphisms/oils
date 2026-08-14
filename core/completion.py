@@ -1403,16 +1403,7 @@ class RootCompleter(object):
 
             yield line_until_word + cand + sp
 
-            # NOTE: Can't use %.2f in production build!
             i += 1
-            elapsed_ms = (time_.time() - start_time) * 1000.0
-            plural = '' if i == 1 else 'es'
-
-            # TODO: Show this in the UI if it takes too long!
-            if 0:
-                self.debug_f.writeln(
-                    '... %d match%s for %r in %d ms (Ctrl-C to cancel)' %
-                    (i, plural, comp.line, elapsed_ms))
 
         elapsed_ms = (time_.time() - start_time) * 1000.0
         plural = '' if i == 1 else 'es'
