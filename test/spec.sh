@@ -326,6 +326,10 @@ globstar() {
   test/spec-py.sh run-file globstar "$@"
 }
 
+grease-readable-operators() {
+  test/spec-py.sh run-file grease-readable-operators "$@"
+}
+
 hay-isolation() {
   test/spec-py.sh run-file hay-isolation "$@"
 }
