@@ -2,9 +2,9 @@
 ## oils_failures_allowed: 0
 ## compare_shells:
 
-#### Grease white square brackets and conjunction
+#### Grease white square brackets, conjunction, and condition negation
 x=hello
-⟦ -n "$x" ∧ "$x" != no ⟧ ∧ echo yes
+⟦ -n "$x" ∧ ¬ "$x" = no ⟧ ∧ echo yes
 ## stdout: yes
 
 #### Grease disjunction in command context
@@ -20,5 +20,8 @@ false ∨ echo fallback
 ## stdout: true
 
 #### Grease operator glyphs stay literal when quoted
-printf '%s\n' '⟦ ∧ ∨ ¬ ⟧'
-## stdout: ⟦ ∧ ∨ ¬ ⟧
+printf '%s\n' '⟦ ∧ ∨ ¬ ⟧' "⟦ ∧ ∨ ¬ ⟧"
+## STDOUT:
+⟦ ∧ ∨ ¬ ⟧
+⟦ ∧ ∨ ¬ ⟧
+## END
