@@ -151,7 +151,18 @@ LEXER_DEF[lex_mode_e.Comment] = [R(r'[^\n\0]*', Id.Ignored_Comment)]
 # The range \x80-\xff makes sure that UTF-8 sequences are a single token.
 _LITERAL_WHITELIST_REGEX = r'[\x80-\xffa-zA-Z0-9_.\-]+'
 
+# Grease readable aliases.  Byte spellings keep this Python 2 bootstrap source
+# ASCII-only while matching the UTF-8 source characters entered by users.
+_GREASE_DBRACKET_LEFT = '\xe2\x9f\xa6'   # U+27E6 MATHEMATICAL LEFT WHITE SQUARE BRACKET
+_GREASE_DBRACKET_RIGHT = '\xe2\x9f\xa7'  # U+27E7 MATHEMATICAL RIGHT WHITE SQUARE BRACKET
+_GREASE_AND = '\xe2\x88\xa7'             # U+2227 LOGICAL AND
+_GREASE_OR = '\xe2\x88\xa8'              # U+2228 LOGICAL OR
+_GREASE_NOT = '\xc2\xac'                   # U+00AC NOT SIGN
+
 _UNQUOTED = _BACKSLASH + _LEFT_SUBS + _LEFT_UNQUOTED + _LEFT_PROCSUB + _VARS + [
+    # Grease operators must precede the broad UTF-8 literal rule.
+    C(_GREASE_AND, Id.Op_DAmp),
+    C(_GREASE_OR, Id.Op_DPipe),
     # NOTE: We could add anything 128 and above to this character class?  So
     # utf-8 characters don't get split?
     R(_LITERAL_WHITELIST_REGEX, Id.Lit_Chars),
@@ -189,7 +200,9 @@ _EXTGLOB_BEGIN = [
 
 KEYWORDS = [
     # NOTE: { is matched elsewhere
+    C(_GREASE_DBRACKET_LEFT, Id.KW_DLeftBracket),
     C('[[', Id.KW_DLeftBracket),
+    C(_GREASE_NOT, Id.KW_Bang),
     C('!', Id.KW_Bang),
     C('for', Id.KW_For),
     C('while', Id.KW_While),
@@ -328,9 +341,11 @@ LEXER_DEF[lex_mode_e.Backtick] = [
 # - Don't really need redirects either... Redir_Less could be Op_Less
 # - Id.Op_DLeftParen can't be nested inside.
 LEXER_DEF[lex_mode_e.DBracket] = [
+    C(_GREASE_DBRACKET_RIGHT, Id.Lit_DRightBracket),
     C(']]', Id.Lit_DRightBracket),
     # Must be KW and not Op, because we can have stuff like [[ $foo == !* ]]
     # in addition to [[ ! a && b ]]
+    C(_GREASE_NOT, Id.KW_Bang),
     C('!', Id.KW_Bang),
     C('<', Id.Op_Less),
     C('>', Id.Op_Great),
