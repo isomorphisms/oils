@@ -1,7 +1,12 @@
 #include "cpp/libc.h"
 
+#include <errno.h>
+#include <fcntl.h>
 #include <locale.h>  // setlocale()
 #include <regex.h>   // regcomp()
+#include <stdlib.h>  // mkdtemp()
+#include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>  // gethostname()
 
 #include "mycpp/runtime.h"
@@ -164,6 +169,177 @@ TEST fnmatch_test() {
   PASS();
 }
 
+// These are stable Grease bridge bits, not native header constants.  The
+// wrapper translates them to the host/Bionic constants below the language
+// boundary.
+const int kGreaseProtRead = 1;
+const int kGreaseProtWrite = 2;
+const int kGreaseMapPrivate = 1;
+const int kGreaseMapShared = 2;
+const int kGreaseMapAnonymous = 4;
+const int kGreaseSyncSync = 1;
+const int kGreaseOpenReadOnly = 1;
+const int kGreaseOpenReadWrite = 4;
+const int kGreaseOpenDirectory = 128;
+
+TEST grease_native_memory_test() {
+  Tuple2<int, int>* failed =
+      libc::grease_mmap(StrFromC("0"), kGreaseProtRead,
+                        kGreaseMapPrivate | kGreaseMapAnonymous, -1,
+                        StrFromC("0"));
+  ASSERT_EQ_FMT(EINVAL, failed->at0(), "%d");
+  ASSERT_EQ_FMT(0, failed->at1(), "%d");
+  ASSERT(str_equals(StrFromC("EINVAL"), libc::grease_errno_name(EINVAL)));
+
+  Tuple2<int, int>* mapped =
+      libc::grease_mmap(StrFromC("4096"),
+                        kGreaseProtRead | kGreaseProtWrite,
+                        kGreaseMapPrivate | kGreaseMapAnonymous, -1,
+                        StrFromC("0"));
+  ASSERT_EQ_FMT(0, mapped->at0(), "%d");
+  int handle = mapped->at1();
+  ASSERT(handle > 0);
+
+  ASSERT_EQ_FMT(0,
+                libc::grease_mapping_write(handle, StrFromC("17"),
+                                            StrFromC("pensieve")),
+                "%d");
+  Tuple2<int, BigStr*>* read =
+      libc::grease_mapping_read(handle, StrFromC("17"), StrFromC("8"));
+  ASSERT_EQ_FMT(0, read->at0(), "%d");
+  ASSERT(str_equals(StrFromC("pensieve"), read->at1()));
+
+  Tuple2<int, BigStr*>* past_end =
+      libc::grease_mapping_read(handle, StrFromC("4094"), StrFromC("8"));
+  ASSERT_EQ_FMT(EINVAL, past_end->at0(), "%d");
+
+  ASSERT_EQ_FMT(0, libc::grease_mprotect(handle, kGreaseProtRead), "%d");
+  ASSERT_EQ_FMT(0,
+                libc::grease_mprotect(handle,
+                                      kGreaseProtRead | kGreaseProtWrite),
+                "%d");
+
+  ASSERT_EQ_FMT(0, libc::grease_munmap(handle), "%d");
+  ASSERT_EQ_FMT(EINVAL, libc::grease_munmap(handle), "%d");
+
+  PASS();
+}
+
+static void TempPath(char* out, size_t out_size, const char* directory,
+                     const char* leaf) {
+  int n = snprintf(out, out_size, "%s/%s", directory, leaf);
+  ASSERT(n > 0);
+  ASSERT(static_cast<size_t>(n) < out_size);
+}
+
+TEST grease_native_at_filesystem_test() {
+  char directory_template[] = "/tmp/grease-native-XXXXXX";
+  char* directory = mkdtemp(directory_template);
+  ASSERT(directory != nullptr);
+
+  char index_path[PATH_MAX];
+  TempPath(index_path, sizeof(index_path), directory, "index.bin");
+
+  int setup_fd = open(index_path, O_CREAT | O_RDWR | O_TRUNC, 0600);
+  ASSERT(setup_fd >= 0);
+  ASSERT_EQ_FMT(4096, ftruncate(setup_fd, 4096) == 0 ? 4096 : -1, "%d");
+  ASSERT_EQ_FMT(8, static_cast<int>(pwrite(setup_fd, "fragment", 8, 0)), "%d");
+  ASSERT_EQ_FMT(0, close(setup_fd), "%d");
+
+  Tuple2<int, int>* opened_dir =
+      libc::grease_openat(0, StrFromC(directory),
+                           kGreaseOpenReadOnly | kGreaseOpenDirectory, 0);
+  ASSERT_EQ_FMT(0, opened_dir->at0(), "%d");
+  int directory_handle = opened_dir->at1();
+  ASSERT(directory_handle > 0);
+
+  Tuple2<int, int>* missing =
+      libc::grease_openat(directory_handle, StrFromC("missing"),
+                           kGreaseOpenReadOnly, 0);
+  ASSERT_EQ_FMT(ENOENT, missing->at0(), "%d");
+  ASSERT_EQ_FMT(0, missing->at1(), "%d");
+
+  Tuple2<int, int>* opened_file =
+      libc::grease_openat(directory_handle, StrFromC("index.bin"),
+                           kGreaseOpenReadWrite, 0);
+  ASSERT_EQ_FMT(0, opened_file->at0(), "%d");
+  int file_handle = opened_file->at1();
+  ASSERT(file_handle > 0);
+
+  Tuple2<int, int>* mapped =
+      libc::grease_mmap(StrFromC("4096"),
+                        kGreaseProtRead | kGreaseProtWrite,
+                        kGreaseMapShared, file_handle, StrFromC("0"));
+  ASSERT_EQ_FMT(0, mapped->at0(), "%d");
+  int mapping_handle = mapped->at1();
+
+  Tuple2<int, BigStr*>* original = libc::grease_mapping_read(
+      mapping_handle, StrFromC("0"), StrFromC("8"));
+  ASSERT_EQ_FMT(0, original->at0(), "%d");
+  ASSERT(str_equals(StrFromC("fragment"), original->at1()));
+
+  ASSERT_EQ_FMT(0,
+                libc::grease_mapping_write(mapping_handle, StrFromC("0"),
+                                            StrFromC("pensieve")),
+                "%d");
+  ASSERT_EQ_FMT(0, libc::grease_msync(mapping_handle, kGreaseSyncSync), "%d");
+  ASSERT_EQ_FMT(0, libc::grease_munmap(mapping_handle), "%d");
+  ASSERT_EQ_FMT(0, libc::grease_close(file_handle), "%d");
+
+  int verify_fd = open(index_path, O_RDONLY);
+  ASSERT(verify_fd >= 0);
+  char verify[9];
+  memset(verify, 0, sizeof(verify));
+  ASSERT_EQ_FMT(8, static_cast<int>(read(verify_fd, verify, 8)), "%d");
+  ASSERT_EQ_FMT(0, close(verify_fd), "%d");
+  ASSERT(strcmp(verify, "pensieve") == 0);
+
+  ASSERT_EQ_FMT(0,
+                libc::grease_linkat(directory_handle, StrFromC("index.bin"),
+                                    directory_handle, StrFromC("index-hard"),
+                                    false),
+                "%d");
+  ASSERT_EQ_FMT(0,
+                libc::grease_symlinkat(StrFromC("index.bin"), directory_handle,
+                                       StrFromC("index-link")),
+                "%d");
+
+  char hard_path[PATH_MAX];
+  char link_path[PATH_MAX];
+  TempPath(hard_path, sizeof(hard_path), directory, "index-hard");
+  TempPath(link_path, sizeof(link_path), directory, "index-link");
+
+  struct stat original_stat;
+  struct stat hard_stat;
+  struct stat link_stat;
+  ASSERT_EQ_FMT(0, stat(index_path, &original_stat), "%d");
+  ASSERT_EQ_FMT(0, stat(hard_path, &hard_stat), "%d");
+  ASSERT(original_stat.st_ino == hard_stat.st_ino);
+  ASSERT_EQ_FMT(0, lstat(link_path, &link_stat), "%d");
+  ASSERT(S_ISLNK(link_stat.st_mode));
+
+  ASSERT_EQ_FMT(0,
+                libc::grease_unlinkat(directory_handle, StrFromC("index-hard"),
+                                      false),
+                "%d");
+  ASSERT_EQ_FMT(0,
+                libc::grease_unlinkat(directory_handle, StrFromC("index-link"),
+                                      false),
+                "%d");
+  ASSERT_EQ_FMT(ENOENT,
+                libc::grease_unlinkat(directory_handle, StrFromC("index-link"),
+                                      false),
+                "%d");
+  ASSERT_EQ_FMT(0,
+                libc::grease_unlinkat(directory_handle, StrFromC("index.bin"),
+                                      false),
+                "%d");
+  ASSERT_EQ_FMT(0, libc::grease_close(directory_handle), "%d");
+  ASSERT_EQ_FMT(0, rmdir(directory), "%d");
+
+  PASS();
+}
+
 TEST for_test_coverage() {
   // Sometimes we're not connected to a terminal
   try {
@@ -187,6 +363,8 @@ int main(int argc, char** argv) {
   RUN_TEST(regex_wrapper_test);
   RUN_TEST(glob_test);
   RUN_TEST(fnmatch_test);
+  RUN_TEST(grease_native_memory_test);
+  RUN_TEST(grease_native_at_filesystem_test);
   RUN_TEST(for_test_coverage);
 
   gHeap.CleanProcessExit();
