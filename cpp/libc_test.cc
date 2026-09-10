@@ -2,8 +2,10 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <locale.h>  // setlocale()
 #include <regex.h>   // regcomp()
+#include <stdio.h>
 #include <stdlib.h>  // mkdtemp()
 #include <string.h>
 #include <sys/stat.h>
@@ -225,11 +227,10 @@ TEST grease_native_memory_test() {
   PASS();
 }
 
-static void TempPath(char* out, size_t out_size, const char* directory,
+static bool TempPath(char* out, size_t out_size, const char* directory,
                      const char* leaf) {
   int n = snprintf(out, out_size, "%s/%s", directory, leaf);
-  ASSERT(n > 0);
-  ASSERT(static_cast<size_t>(n) < out_size);
+  return n > 0 && static_cast<size_t>(n) < out_size;
 }
 
 TEST grease_native_at_filesystem_test() {
@@ -238,11 +239,11 @@ TEST grease_native_at_filesystem_test() {
   ASSERT(directory != nullptr);
 
   char index_path[PATH_MAX];
-  TempPath(index_path, sizeof(index_path), directory, "index.bin");
+  ASSERT(TempPath(index_path, sizeof(index_path), directory, "index.bin"));
 
   int setup_fd = open(index_path, O_CREAT | O_RDWR | O_TRUNC, 0600);
   ASSERT(setup_fd >= 0);
-  ASSERT_EQ_FMT(4096, ftruncate(setup_fd, 4096) == 0 ? 4096 : -1, "%d");
+  ASSERT(ftruncate(setup_fd, 4096) == 0);
   ASSERT_EQ_FMT(8, static_cast<int>(pwrite(setup_fd, "fragment", 8, 0)), "%d");
   ASSERT_EQ_FMT(0, close(setup_fd), "%d");
 
@@ -306,8 +307,8 @@ TEST grease_native_at_filesystem_test() {
 
   char hard_path[PATH_MAX];
   char link_path[PATH_MAX];
-  TempPath(hard_path, sizeof(hard_path), directory, "index-hard");
-  TempPath(link_path, sizeof(link_path), directory, "index-link");
+  ASSERT(TempPath(hard_path, sizeof(hard_path), directory, "index-hard"));
+  ASSERT(TempPath(link_path, sizeof(link_path), directory, "index-link"));
 
   struct stat original_stat;
   struct stat hard_stat;
