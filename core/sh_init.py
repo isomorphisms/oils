@@ -2,6 +2,7 @@ from __future__ import print_function
 
 from _devbuild.gen.runtime_asdl import scope_e
 from _devbuild.gen.value_asdl import value, value_e, value_t
+from builtin import func_native
 from core.error import e_die
 from core import pyos
 from core import pyutil
@@ -62,8 +63,6 @@ class EnvConfig(object):
 
             if val is None:
                 return value.Undef
-
-            #log('**ENV obj val = %s', val)
 
         else:  # e.g. $PATH
             val = self.mem.GetValue(var_name)
@@ -157,9 +156,7 @@ def InitDefaultVars(mem, argv):
     # InitVarsAfterEnv().
 
     # Default value; user may unset it.
-    # $ echo -n "$IFS" | python -c 'import sys;print repr(sys.stdin.read())'
-    # ' \t\n'
-    state.SetGlobalString(mem, 'IFS', split.DEFAULT_IFS)
+    state.SetGlobalString(mem, 'IFS', ' \t\n')
 
     state.SetGlobalString(mem, 'HOSTNAME', libc.gethostname())
 
@@ -176,33 +173,20 @@ def InitDefaultVars(mem, argv):
     # with 'readline' yet.
     state.SetGlobalString(mem, 'COMP_WORDBREAKS', _READLINE_DELIMS)
 
-    # TODO on $HOME: bash sets it if it's a login shell and not in POSIX mode!
-    # if (login_shell == 1 && posixly_correct == 0)
-    #   set_home_var ();
-
 
 def CopyVarsFromEnv(exec_opts, environ, mem):
     # type: (optview.Exec, Dict[str, str], state.Mem) -> None
 
     # POSIX shell behavior: env vars become exported global vars
     if not exec_opts.no_exported():
-        # This is the way dash and bash work -- at startup, they turn everything in
-        # 'environ' variable into shell variables.  Bash has an export_env
-        # variable.  Dash has a loop through environ in init.c
         for n, v in iteritems(environ):
             mem.SetNamed(location.LName(n),
                          value.Str(v),
                          scope_e.GlobalOnly,
                          flags=state.SetExport)
 
-    # YSH behavior: env vars go in ENV dict, not exported vars.  Note that
-    # ysh:upgrade can have BOTH ENV and exported vars.  It's OK if they're on
-    # at the same time.
+    # YSH behavior: env vars go in ENV dict, not exported vars.
     if exec_opts.env_obj():
-        # This is for invoking bin/ysh
-        # If you run bin/osh, then exec_opts.env_obj() will be FALSE at this point.
-        # When you write shopt --set ysh:all or ysh:upgrade, then the shopt
-        # builtin will call MaybeInitEnvDict()
         mem.MaybeInitEnvDict(environ)
 
 
@@ -212,23 +196,11 @@ def InitVarsAfterEnv(mem, mutable_opts):
     # If PATH SHELLOPTS PWD are not in environ, then initialize them.
     s = mem.env_config.Get('PATH')
     if s is None:
-        # Setting PATH to these four dirs match busybox ash. zsh and mksh only
-        # do /bin:/usr/bin while bash and dash add {,/usr/,/usr/local}/{bin,sbin}
-        # The default PATH in busybox ash is defined here:
-        # busybox https://github.com/mirror/busybox/blob/371fe9f71d445d18be28c82a2a6d82115c8af19d/include/libbb.h#L2303
-        # The default PATH in bash is defined here:
-        # https://github.com/bminor/bash/blob/a8a1c2fac029404d3f42cd39f5a20f24b6e4fe4b/config-top.h#L61
         mem.env_config.SetDefault('PATH', '/sbin:/usr/sbin:/bin:/usr/bin')
 
     if mem.exec_opts.no_init_globals():
         # YSH initialization
         mem.SetPwd(GetWorkingDir())
-
-        # TODO: YSH can use cross-process tracing with SHELLOPTS, BASHOPTS, and
-        # OILS_OPTS?
-        # Or at least the xtrace stuff should be in OILS_OPTS.  Bash has a
-        # quirk where these env vars turn options ON, but they don't turn
-        # options OFF.  So it is perhaps not a great mechanism.
     else:
         # OSH initialization
         shellopts = mem.GetValue('SHELLOPTS')
@@ -238,41 +210,37 @@ def InitVarsAfterEnv(mem, mutable_opts):
                 shellopts = cast(value.Str, UP_shellopts)
                 mutable_opts.InitFromEnv(shellopts.s)
             elif case(value_e.Undef):
-                # If it's not in the environment, construct the string
                 state.SetGlobalString(mem, 'SHELLOPTS',
                                       mutable_opts.ShelloptsString())
             else:
                 raise AssertionError()
 
-        # Mark it readonly, like bash
         mem.SetNamed(location.LName('SHELLOPTS'),
                      None,
                      scope_e.GlobalOnly,
                      flags=state.SetReadOnly)
 
-        # NOTE: bash also has BASHOPTS
-
         our_pwd = None  # type: Optional[str]
         val = mem.GetValue('PWD')
-        if val.tag() == value_e.Str:
-            env_pwd = cast(value.Str, val).s
-            # POSIX rule: PWD is inherited if it's an absolute path that corresponds to '.'
-            if env_pwd.startswith('/') and pyos.IsSameFile(env_pwd, '.'):
-                our_pwd = env_pwd
+        UP_val = val
+        with tagswitch(val) as case:
+            if case(value_e.Str):
+                val = cast(value.Str, UP_val)
+                env_pwd = val.s
+                if env_pwd.startswith('/') and pyos.IsSameFile(env_pwd, '.'):
+                    our_pwd = env_pwd
+            elif case(value_e.Undef):
+                pass
+            else:
+                pass
 
-        # POSIX: Otherwise, recalculate it
         if our_pwd is None:
             our_pwd = GetWorkingDir()
 
-        # It's EXPORTED, even if it's not set.  bash and dash both do this:
-        #     env -i -- dash -c env
         mem.SetNamed(location.LName('PWD'),
                      value.Str(our_pwd),
                      scope_e.GlobalOnly,
                      flags=state.SetExport)
-
-        # Set a MUTABLE GLOBAL that's SEPARATE from $PWD.  It's used by the 'pwd'
-        # builtin, and it can't be modified by users.
         mem.SetPwd(our_pwd)
 
 
@@ -285,7 +253,6 @@ def InitInteractive(mem, sh_files, lang):
         mem.env_config.SetDefault('PS1', r'\s-\v\$ ')
     else:
         if lang == 'ysh':
-            # If this is bin/ysh, and we got a plain PS1, then prepend 'ysh ' to PS1
             mem.env_dict['PS1'] = value.Str('ysh ' + ps1_str)
 
     hist_var = sh_files.HistVar()
@@ -293,7 +260,7 @@ def InitInteractive(mem, sh_files, lang):
     if hist_str is None:
         mem.env_config.SetDefault(hist_var, sh_files.DefaultHistoryFile())
 
-    sh_files.init_done = True  # sanity check before using sh_files
+    sh_files.init_done = True
 
 
 def InitBuiltins(mem, version_str, defaults):
@@ -316,9 +283,11 @@ def InitBuiltins(mem, version_str, defaults):
     # - C spells it NAN
     # - JavaScript spells it NaN
     # - Python 2 has float('nan'), while Python 3 has math.nan.
-    #
     # - libc prints the strings 'nan' and 'inf'
     # - Python 3 prints the strings 'nan' and 'inf'
     # - JavaScript prints 'NaN' and 'Infinity', which is more stylized
     mem.builtins['NAN'] = value.Float(pyutil.nan())
     mem.builtins['INFINITY'] = value.Float(pyutil.infinity())
+
+    # Native Grease actions are an explicit object rather than ambient C FFI.
+    mem.builtins['native'] = func_native.MakeNativeObject()
