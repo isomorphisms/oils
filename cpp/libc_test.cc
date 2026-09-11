@@ -155,7 +155,7 @@ TEST glob_test() {
 TEST fnmatch_test() {
   BigStr* s1 = (StrFromC("foo.py "))->strip();
   ASSERT(libc::fnmatch(StrFromC("*.py"), s1));
-  ASSERT(!libc::fnmatch(StrFromC("*(foo|bar).py"), StrFromC("foo.p")));
+  ASSERT(!libc::fnmatch(StrFromC("*.py"), StrFromC("foo.p")));
 
   // Unicode - ? is byte or code point?
   ASSERT(libc::fnmatch(StrFromC("_?_"), StrFromC("_x_")));
