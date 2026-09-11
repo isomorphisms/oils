@@ -304,6 +304,7 @@ const int kOpenCloseOnExec = 512;
 struct MappingSlot {
   void* address;
   size_t length;
+  int protection;
   bool active;
 };
 
@@ -361,11 +362,12 @@ static int ParseOffset(BigStr* text, off_t* out) {
   return 0;
 }
 
-static int StoreMapping(void* address, size_t length) {
+static int StoreMapping(void* address, size_t length, int protection) {
   for (size_t i = 0; i < g_mappings.size(); ++i) {
     if (!g_mappings[i].active) {
       g_mappings[i].address = address;
       g_mappings[i].length = length;
+      g_mappings[i].protection = protection;
       g_mappings[i].active = true;
       return static_cast<int>(i + 1);
     }
@@ -373,7 +375,7 @@ static int StoreMapping(void* address, size_t length) {
   if (g_mappings.size() >= static_cast<size_t>(INT_MAX - 1)) {
     return 0;
   }
-  g_mappings.push_back({address, length, true});
+  g_mappings.push_back({address, length, protection, true});
   return static_cast<int>(g_mappings.size());
 }
 
@@ -578,7 +580,7 @@ Tuple2<int, int>* grease_mmap(BigStr* length_text, int protection,
     return Alloc<Tuple2<int, int>>(errno, 0);
   }
 
-  int handle = StoreMapping(address, length);
+  int handle = StoreMapping(address, length, protection);
   if (handle == 0) {
     ::munmap(address, length);
     return Alloc<Tuple2<int, int>>(ENOMEM, 0);
@@ -597,6 +599,7 @@ int grease_munmap(int mapping_handle) {
   mapping->active = false;
   mapping->address = nullptr;
   mapping->length = 0;
+  mapping->protection = 0;
   return 0;
 }
 
@@ -609,6 +612,7 @@ int grease_mprotect(int mapping_handle, int protection) {
                  NativeProtection(protection)) == -1) {
     return errno;
   }
+  mapping->protection = protection;
   return 0;
 }
 
@@ -634,6 +638,9 @@ Tuple2<int, BigStr*>* grease_mapping_read(int mapping_handle,
   MappingSlot* mapping = GetMapping(mapping_handle);
   if (mapping == nullptr) {
     return Alloc<Tuple2<int, BigStr*>>(EINVAL, kEmptyString);
+  }
+  if (!(mapping->protection & kProtRead)) {
+    return Alloc<Tuple2<int, BigStr*>>(EACCES, kEmptyString);
   }
 
   size_t offset = 0;
@@ -666,6 +673,9 @@ int grease_mapping_write(int mapping_handle, BigStr* offset_text,
   MappingSlot* mapping = GetMapping(mapping_handle);
   if (mapping == nullptr) {
     return EINVAL;
+  }
+  if (!(mapping->protection & kProtWrite)) {
+    return EACCES;
   }
 
   size_t offset = 0;
