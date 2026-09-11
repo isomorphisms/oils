@@ -44,7 +44,8 @@ def _Int(i):
 
 def _Props():
     # type: () -> Dict[str, value_t]
-    return NewDict()
+    props = NewDict()  # type: Dict[str, value_t]
+    return props
 
 
 def _NativeObject(kind):
@@ -309,6 +310,10 @@ def _DefaultOpenFlags():
 
 class Mmap(vm._Callable):
 
+    def __init__(self):
+        # type: () -> None
+        pass
+
     def Call(self, rd):
         # type: (typed_args.Reader) -> value_t
         unused_self = rd.PosObj()
@@ -327,17 +332,23 @@ class Mmap(vm._Callable):
             file_token = _DescriptorToken(cast(Obj, file_value),
                                           rd.LeftParenToken())
 
-        errno_num, token = libc.grease_mmap(
+        native_result = libc.grease_mmap(
             mops.ToStr(length),
             _ProtectionMask(protection, rd.LeftParenToken()),
             _MappingFlags(flags, rd.LeftParenToken()), file_token,
             mops.ToStr(offset))
+        assert native_result is not None
+        errno_num, token = native_result
         if errno_num != 0:
             return _Err(errno_num)
         return _Ok(_Mapping(token, length))
 
 
 class Munmap(vm._Callable):
+
+    def __init__(self):
+        # type: () -> None
+        pass
 
     def Call(self, rd):
         # type: (typed_args.Reader) -> value_t
@@ -356,6 +367,10 @@ class Munmap(vm._Callable):
 
 class Mprotect(vm._Callable):
 
+    def __init__(self):
+        # type: () -> None
+        pass
+
     def Call(self, rd):
         # type: (typed_args.Reader) -> value_t
         unused_self = rd.PosObj()
@@ -370,6 +385,10 @@ class Mprotect(vm._Callable):
 
 class Msync(vm._Callable):
 
+    def __init__(self):
+        # type: () -> None
+        pass
+
     def Call(self, rd):
         # type: (typed_args.Reader) -> value_t
         unused_self = rd.PosObj()
@@ -383,6 +402,10 @@ class Msync(vm._Callable):
 
 class MappingRead(vm._Callable):
 
+    def __init__(self):
+        # type: () -> None
+        pass
+
     def Call(self, rd):
         # type: (typed_args.Reader) -> value_t
         unused_self = rd.PosObj()
@@ -391,14 +414,20 @@ class MappingRead(vm._Callable):
         length = rd.PosInt()
         rd.Done()
         token = _MappingToken(mapping, rd.LeftParenToken())
-        errno_num, data = libc.grease_mapping_read(
+        native_result = libc.grease_mapping_read(
             token, mops.ToStr(offset), mops.ToStr(length))
+        assert native_result is not None
+        errno_num, data = native_result
         if errno_num != 0:
             return _Err(errno_num)
         return _Ok(value.Str(data))
 
 
 class MappingWrite(vm._Callable):
+
+    def __init__(self):
+        # type: () -> None
+        pass
 
     def Call(self, rd):
         # type: (typed_args.Reader) -> value_t
@@ -413,6 +442,10 @@ class MappingWrite(vm._Callable):
 
 
 class OpenAt(vm._Callable):
+
+    def __init__(self):
+        # type: () -> None
+        pass
 
     def Call(self, rd):
         # type: (typed_args.Reader) -> value_t
@@ -429,9 +462,11 @@ class OpenAt(vm._Callable):
             raise error.TypeErrVerbose('openat mode must be between 0 and 4095',
                                        rd.LeftParenToken())
 
-        errno_num, token = libc.grease_openat(
+        native_result = libc.grease_openat(
             _DescriptorToken(directory, rd.LeftParenToken()), path, flag_mask,
             mops.BigTruncate(mode))
+        assert native_result is not None
+        errno_num, token = native_result
         if errno_num != 0:
             return _Err(errno_num)
         is_directory = bool(flag_mask & OPEN_DIRECTORY)
@@ -439,6 +474,10 @@ class OpenAt(vm._Callable):
 
 
 class Close(vm._Callable):
+
+    def __init__(self):
+        # type: () -> None
+        pass
 
     def Call(self, rd):
         # type: (typed_args.Reader) -> value_t
@@ -459,6 +498,10 @@ class Close(vm._Callable):
 
 class LinkAt(vm._Callable):
 
+    def __init__(self):
+        # type: () -> None
+        pass
+
     def Call(self, rd):
         # type: (typed_args.Reader) -> value_t
         unused_self = rd.PosObj()
@@ -477,6 +520,10 @@ class LinkAt(vm._Callable):
 
 class SymlinkAt(vm._Callable):
 
+    def __init__(self):
+        # type: () -> None
+        pass
+
     def Call(self, rd):
         # type: (typed_args.Reader) -> value_t
         unused_self = rd.PosObj()
@@ -490,6 +537,10 @@ class SymlinkAt(vm._Callable):
 
 
 class UnlinkAt(vm._Callable):
+
+    def __init__(self):
+        # type: () -> None
+        pass
 
     def Call(self, rd):
         # type: (typed_args.Reader) -> value_t
