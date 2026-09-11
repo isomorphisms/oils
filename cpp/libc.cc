@@ -3,16 +3,24 @@
 #include "cpp/libc.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <fnmatch.h>
 #include <glob.h>
+#include <limits.h>
 #include <locale.h>
 #include <regex.h>
 #include <signal.h>  // NSIG
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>  // strsignal(), strstr()
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <time.h>    // nanosleep()
 #include <unistd.h>  // gethostname()
 #include <wchar.h>
+
+#include <limits>
+#include <vector>
 
 namespace libc {
 
@@ -266,6 +274,559 @@ BigStr* strsignal(int sig_num) {
   }
 
   return StrFromC(res);
+}
+
+// Stable Grease flag bits. They are intentionally unrelated to platform
+// header values, which stay below this boundary.
+const int kProtRead = 1;
+const int kProtWrite = 2;
+const int kProtExecute = 4;
+
+const int kMapPrivate = 1;
+const int kMapShared = 2;
+const int kMapAnonymous = 4;
+
+const int kSyncSync = 1;
+const int kSyncAsync = 2;
+const int kSyncInvalidate = 4;
+
+const int kOpenReadOnly = 1;
+const int kOpenWriteOnly = 2;
+const int kOpenReadWrite = 4;
+const int kOpenCreate = 8;
+const int kOpenExclusive = 16;
+const int kOpenTruncate = 32;
+const int kOpenAppend = 64;
+const int kOpenDirectory = 128;
+const int kOpenNoFollow = 256;
+const int kOpenCloseOnExec = 512;
+
+struct MappingSlot {
+  void* address;
+  size_t length;
+  int protection;
+  bool active;
+};
+
+struct FileSlot {
+  int fd;
+  bool active;
+};
+
+static std::vector<MappingSlot> g_mappings;
+static std::vector<FileSlot> g_files;
+
+static int ParseUnsigned(BigStr* text, uint64_t* out) {
+  if (len(text) == 0 || text->data_[0] == '-') {
+    return EINVAL;
+  }
+
+  errno = 0;
+  char* end = nullptr;
+  unsigned long long number = strtoull(text->data_, &end, 10);
+  if (errno != 0) {
+    return errno;
+  }
+  if (end == text->data_ || *end != '\0') {
+    return EINVAL;
+  }
+  *out = static_cast<uint64_t>(number);
+  return 0;
+}
+
+static int ParseSize(BigStr* text, size_t* out) {
+  uint64_t number = 0;
+  int error_num = ParseUnsigned(text, &number);
+  if (error_num != 0) {
+    return error_num;
+  }
+  if (number > std::numeric_limits<size_t>::max()) {
+    return EOVERFLOW;
+  }
+  *out = static_cast<size_t>(number);
+  return 0;
+}
+
+static int ParseOffset(BigStr* text, off_t* out) {
+  uint64_t number = 0;
+  int error_num = ParseUnsigned(text, &number);
+  if (error_num != 0) {
+    return error_num;
+  }
+  uint64_t max_offset =
+      static_cast<uint64_t>(std::numeric_limits<off_t>::max());
+  if (number > max_offset) {
+    return EOVERFLOW;
+  }
+  *out = static_cast<off_t>(number);
+  return 0;
+}
+
+static int StoreMapping(void* address, size_t length, int protection) {
+  for (size_t i = 0; i < g_mappings.size(); ++i) {
+    if (!g_mappings[i].active) {
+      g_mappings[i].address = address;
+      g_mappings[i].length = length;
+      g_mappings[i].protection = protection;
+      g_mappings[i].active = true;
+      return static_cast<int>(i + 1);
+    }
+  }
+  if (g_mappings.size() >= static_cast<size_t>(INT_MAX - 1)) {
+    return 0;
+  }
+  g_mappings.push_back({address, length, protection, true});
+  return static_cast<int>(g_mappings.size());
+}
+
+static MappingSlot* GetMapping(int handle) {
+  if (handle <= 0 || static_cast<size_t>(handle) > g_mappings.size()) {
+    return nullptr;
+  }
+  MappingSlot* slot = &g_mappings[handle - 1];
+  return slot->active ? slot : nullptr;
+}
+
+static int StoreFile(int fd) {
+  for (size_t i = 0; i < g_files.size(); ++i) {
+    if (!g_files[i].active) {
+      g_files[i].fd = fd;
+      g_files[i].active = true;
+      return static_cast<int>(i + 1);
+    }
+  }
+  if (g_files.size() >= static_cast<size_t>(INT_MAX - 1)) {
+    return 0;
+  }
+  g_files.push_back({fd, true});
+  return static_cast<int>(g_files.size());
+}
+
+static FileSlot* GetFile(int handle) {
+  if (handle <= 0 || static_cast<size_t>(handle) > g_files.size()) {
+    return nullptr;
+  }
+  FileSlot* slot = &g_files[handle - 1];
+  return slot->active ? slot : nullptr;
+}
+
+static int NativeDirectoryFd(int handle, int* fd) {
+  if (handle == 0) {
+    *fd = AT_FDCWD;
+    return 0;
+  }
+  FileSlot* slot = GetFile(handle);
+  if (slot == nullptr) {
+    return EBADF;
+  }
+  *fd = slot->fd;
+  return 0;
+}
+
+static int NativeFileFd(int handle, int* fd) {
+  FileSlot* slot = GetFile(handle);
+  if (slot == nullptr) {
+    return EBADF;
+  }
+  *fd = slot->fd;
+  return 0;
+}
+
+static int NativeProtection(int grease_flags) {
+  int result = PROT_NONE;
+  if (grease_flags & kProtRead) {
+    result |= PROT_READ;
+  }
+  if (grease_flags & kProtWrite) {
+    result |= PROT_WRITE;
+  }
+  if (grease_flags & kProtExecute) {
+    result |= PROT_EXEC;
+  }
+  return result;
+}
+
+static int NativeMappingFlags(int grease_flags, int* result) {
+  int native_flags = 0;
+  bool private_mapping = grease_flags & kMapPrivate;
+  bool shared_mapping = grease_flags & kMapShared;
+  if (private_mapping == shared_mapping) {
+    return EINVAL;
+  }
+  native_flags |= private_mapping ? MAP_PRIVATE : MAP_SHARED;
+  if (grease_flags & kMapAnonymous) {
+#ifdef MAP_ANONYMOUS
+    native_flags |= MAP_ANONYMOUS;
+#else
+    return ENOTSUP;
+#endif
+  }
+  *result = native_flags;
+  return 0;
+}
+
+static int NativeSyncFlags(int grease_flags, int* result) {
+  bool sync = grease_flags & kSyncSync;
+  bool async = grease_flags & kSyncAsync;
+  if (sync == async) {
+    return EINVAL;
+  }
+  int native_flags = sync ? MS_SYNC : MS_ASYNC;
+  if (grease_flags & kSyncInvalidate) {
+    native_flags |= MS_INVALIDATE;
+  }
+  *result = native_flags;
+  return 0;
+}
+
+static int NativeOpenFlags(int grease_flags, int* result) {
+  int access_count = 0;
+  int native_flags = 0;
+
+  if (grease_flags & kOpenReadOnly) {
+    native_flags |= O_RDONLY;
+    ++access_count;
+  }
+  if (grease_flags & kOpenWriteOnly) {
+    native_flags |= O_WRONLY;
+    ++access_count;
+  }
+  if (grease_flags & kOpenReadWrite) {
+    native_flags |= O_RDWR;
+    ++access_count;
+  }
+  if (access_count != 1) {
+    return EINVAL;
+  }
+
+  if (grease_flags & kOpenCreate) {
+    native_flags |= O_CREAT;
+  }
+  if (grease_flags & kOpenExclusive) {
+    native_flags |= O_EXCL;
+  }
+  if (grease_flags & kOpenTruncate) {
+    native_flags |= O_TRUNC;
+  }
+  if (grease_flags & kOpenAppend) {
+    native_flags |= O_APPEND;
+  }
+#ifdef O_DIRECTORY
+  if (grease_flags & kOpenDirectory) {
+    native_flags |= O_DIRECTORY;
+  }
+#else
+  if (grease_flags & kOpenDirectory) {
+    return ENOTSUP;
+  }
+#endif
+#ifdef O_NOFOLLOW
+  if (grease_flags & kOpenNoFollow) {
+    native_flags |= O_NOFOLLOW;
+  }
+#else
+  if (grease_flags & kOpenNoFollow) {
+    return ENOTSUP;
+  }
+#endif
+#ifdef O_CLOEXEC
+  if (grease_flags & kOpenCloseOnExec) {
+    native_flags |= O_CLOEXEC;
+  }
+#else
+  if (grease_flags & kOpenCloseOnExec) {
+    return ENOTSUP;
+  }
+#endif
+
+  *result = native_flags;
+  return 0;
+}
+
+Tuple2<int, int>* grease_mmap(BigStr* length_text, int protection,
+                              int mapping_flags, int file_handle,
+                              BigStr* offset_text) {
+  size_t length = 0;
+  int error_num = ParseSize(length_text, &length);
+  if (error_num != 0) {
+    return Alloc<Tuple2<int, int>>(error_num, 0);
+  }
+
+  off_t offset = 0;
+  error_num = ParseOffset(offset_text, &offset);
+  if (error_num != 0) {
+    return Alloc<Tuple2<int, int>>(error_num, 0);
+  }
+
+  int native_flags = 0;
+  error_num = NativeMappingFlags(mapping_flags, &native_flags);
+  if (error_num != 0) {
+    return Alloc<Tuple2<int, int>>(error_num, 0);
+  }
+
+  int fd = -1;
+  if (!(mapping_flags & kMapAnonymous)) {
+    error_num = NativeFileFd(file_handle, &fd);
+    if (error_num != 0) {
+      return Alloc<Tuple2<int, int>>(error_num, 0);
+    }
+  }
+
+  errno = 0;
+  void* address =
+      ::mmap(nullptr, length, NativeProtection(protection), native_flags, fd,
+             offset);
+  if (address == MAP_FAILED) {
+    return Alloc<Tuple2<int, int>>(errno, 0);
+  }
+
+  int handle = StoreMapping(address, length, protection);
+  if (handle == 0) {
+    ::munmap(address, length);
+    return Alloc<Tuple2<int, int>>(ENOMEM, 0);
+  }
+  return Alloc<Tuple2<int, int>>(0, handle);
+}
+
+int grease_munmap(int mapping_handle) {
+  MappingSlot* mapping = GetMapping(mapping_handle);
+  if (mapping == nullptr) {
+    return EINVAL;
+  }
+  if (::munmap(mapping->address, mapping->length) == -1) {
+    return errno;
+  }
+  mapping->active = false;
+  mapping->address = nullptr;
+  mapping->length = 0;
+  mapping->protection = 0;
+  return 0;
+}
+
+int grease_mprotect(int mapping_handle, int protection) {
+  MappingSlot* mapping = GetMapping(mapping_handle);
+  if (mapping == nullptr) {
+    return EINVAL;
+  }
+  if (::mprotect(mapping->address, mapping->length,
+                 NativeProtection(protection)) == -1) {
+    return errno;
+  }
+  mapping->protection = protection;
+  return 0;
+}
+
+int grease_msync(int mapping_handle, int sync_flags) {
+  MappingSlot* mapping = GetMapping(mapping_handle);
+  if (mapping == nullptr) {
+    return EINVAL;
+  }
+  int native_flags = 0;
+  int error_num = NativeSyncFlags(sync_flags, &native_flags);
+  if (error_num != 0) {
+    return error_num;
+  }
+  if (::msync(mapping->address, mapping->length, native_flags) == -1) {
+    return errno;
+  }
+  return 0;
+}
+
+Tuple2<int, BigStr*>* grease_mapping_read(int mapping_handle,
+                                          BigStr* offset_text,
+                                          BigStr* length_text) {
+  MappingSlot* mapping = GetMapping(mapping_handle);
+  if (mapping == nullptr) {
+    return Alloc<Tuple2<int, BigStr*>>(EINVAL, kEmptyString);
+  }
+  if (!(mapping->protection & kProtRead)) {
+    return Alloc<Tuple2<int, BigStr*>>(EACCES, kEmptyString);
+  }
+
+  size_t offset = 0;
+  int error_num = ParseSize(offset_text, &offset);
+  if (error_num != 0) {
+    return Alloc<Tuple2<int, BigStr*>>(error_num, kEmptyString);
+  }
+
+  size_t length = 0;
+  error_num = ParseSize(length_text, &length);
+  if (error_num != 0) {
+    return Alloc<Tuple2<int, BigStr*>>(error_num, kEmptyString);
+  }
+
+  if (offset > mapping->length || length > mapping->length - offset) {
+    return Alloc<Tuple2<int, BigStr*>>(EINVAL, kEmptyString);
+  }
+  if (length > static_cast<size_t>(INT_MAX)) {
+    return Alloc<Tuple2<int, BigStr*>>(EOVERFLOW, kEmptyString);
+  }
+
+  BigStr* result = OverAllocatedStr(static_cast<int>(length));
+  memcpy(result->data_, static_cast<char*>(mapping->address) + offset, length);
+  result->MaybeShrink(static_cast<int>(length));
+  return Alloc<Tuple2<int, BigStr*>>(0, result);
+}
+
+int grease_mapping_write(int mapping_handle, BigStr* offset_text,
+                          BigStr* data) {
+  MappingSlot* mapping = GetMapping(mapping_handle);
+  if (mapping == nullptr) {
+    return EINVAL;
+  }
+  if (!(mapping->protection & kProtWrite)) {
+    return EACCES;
+  }
+
+  size_t offset = 0;
+  int error_num = ParseSize(offset_text, &offset);
+  if (error_num != 0) {
+    return error_num;
+  }
+
+  size_t length = static_cast<size_t>(len(data));
+  if (offset > mapping->length || length > mapping->length - offset) {
+    return EINVAL;
+  }
+
+  memcpy(static_cast<char*>(mapping->address) + offset, data->data_, length);
+  return 0;
+}
+
+Tuple2<int, int>* grease_openat(int directory_handle, BigStr* path,
+                                int open_flags, int mode) {
+  int directory_fd = AT_FDCWD;
+  int error_num = NativeDirectoryFd(directory_handle, &directory_fd);
+  if (error_num != 0) {
+    return Alloc<Tuple2<int, int>>(error_num, 0);
+  }
+
+  int native_flags = 0;
+  error_num = NativeOpenFlags(open_flags, &native_flags);
+  if (error_num != 0) {
+    return Alloc<Tuple2<int, int>>(error_num, 0);
+  }
+
+  errno = 0;
+  int fd = ::openat(directory_fd, path->data_, native_flags,
+                    static_cast<mode_t>(mode));
+  if (fd == -1) {
+    return Alloc<Tuple2<int, int>>(errno, 0);
+  }
+
+  int handle = StoreFile(fd);
+  if (handle == 0) {
+    ::close(fd);
+    return Alloc<Tuple2<int, int>>(ENOMEM, 0);
+  }
+  return Alloc<Tuple2<int, int>>(0, handle);
+}
+
+int grease_close(int file_handle) {
+  FileSlot* file = GetFile(file_handle);
+  if (file == nullptr) {
+    return EBADF;
+  }
+  if (::close(file->fd) == -1) {
+    return errno;
+  }
+  file->active = false;
+  file->fd = -1;
+  return 0;
+}
+
+int grease_linkat(int old_directory_handle, BigStr* old_path,
+                   int new_directory_handle, BigStr* new_path,
+                   bool follow_symlink) {
+  int old_fd = AT_FDCWD;
+  int error_num = NativeDirectoryFd(old_directory_handle, &old_fd);
+  if (error_num != 0) {
+    return error_num;
+  }
+  int new_fd = AT_FDCWD;
+  error_num = NativeDirectoryFd(new_directory_handle, &new_fd);
+  if (error_num != 0) {
+    return error_num;
+  }
+
+  int flags = follow_symlink ? AT_SYMLINK_FOLLOW : 0;
+  if (::linkat(old_fd, old_path->data_, new_fd, new_path->data_, flags) == -1) {
+    return errno;
+  }
+  return 0;
+}
+
+int grease_symlinkat(BigStr* target, int directory_handle, BigStr* path) {
+  int directory_fd = AT_FDCWD;
+  int error_num = NativeDirectoryFd(directory_handle, &directory_fd);
+  if (error_num != 0) {
+    return error_num;
+  }
+  if (::symlinkat(target->data_, directory_fd, path->data_) == -1) {
+    return errno;
+  }
+  return 0;
+}
+
+int grease_unlinkat(int directory_handle, BigStr* path,
+                     bool remove_directory) {
+  int directory_fd = AT_FDCWD;
+  int error_num = NativeDirectoryFd(directory_handle, &directory_fd);
+  if (error_num != 0) {
+    return error_num;
+  }
+  int flags = remove_directory ? AT_REMOVEDIR : 0;
+  if (::unlinkat(directory_fd, path->data_, flags) == -1) {
+    return errno;
+  }
+  return 0;
+}
+
+BigStr* grease_errno_name(int errno_num) {
+  switch (errno_num) {
+  case 0:
+    return StrFromC("OK");
+  case EACCES:
+    return StrFromC("EACCES");
+  case EBADF:
+    return StrFromC("EBADF");
+  case EEXIST:
+    return StrFromC("EEXIST");
+  case EINVAL:
+    return StrFromC("EINVAL");
+  case EIO:
+    return StrFromC("EIO");
+  case EISDIR:
+    return StrFromC("EISDIR");
+  case ELOOP:
+    return StrFromC("ELOOP");
+  case ENAMETOOLONG:
+    return StrFromC("ENAMETOOLONG");
+  case ENOENT:
+    return StrFromC("ENOENT");
+  case ENOMEM:
+    return StrFromC("ENOMEM");
+  case ENOSPC:
+    return StrFromC("ENOSPC");
+  case ENOTDIR:
+    return StrFromC("ENOTDIR");
+  case ENOTSUP:
+    return StrFromC("ENOTSUP");
+  case EPERM:
+    return StrFromC("EPERM");
+  case EOVERFLOW:
+    return StrFromC("EOVERFLOW");
+  case EROFS:
+    return StrFromC("EROFS");
+  default:
+    return StrFromC("ERRNO");
+  }
+}
+
+BigStr* grease_errno_message(int errno_num) {
+  const char* message = strerror(errno_num);
+  return message == nullptr ? StrFromC("unknown native error")
+                            : StrFromC(message);
 }
 
 }  // namespace libc
