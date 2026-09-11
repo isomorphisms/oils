@@ -11,6 +11,7 @@
 #include <regex.h>
 #include <signal.h>  // NSIG
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>  // strsignal(), strstr()
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -31,6 +32,7 @@ BigStr* gethostname() {
   if (status != 0) {
     throw Alloc<OSError>(errno);
   }
+  // Important: set the length of the string!
   result->MaybeShrink(strlen(result->data_));
   return result;
 }
@@ -59,22 +61,30 @@ int fnmatch(BigStr* pat, BigStr* str, int flags) {
   case FNM_NOMATCH:
     return 0;
   default:
+    // Other error
     return -1;
   }
 }
 
 List<BigStr*>* glob(BigStr* pat, int flags) {
   glob_t results;
+  // Hm, it's weird that the first one can't be called with GLOB_APPEND.  You
+  // get a segfault.
+  // int flags = GLOB_APPEND;
+  // flags |= GLOB_NOMAGIC;
   int ret = glob(pat->data_, flags, NULL, &results);
 
   const char* err_str = NULL;
   switch (ret) {
-  case 0:
+  case 0:  // no error
     break;
   case GLOB_ABORTED:
     err_str = "GLOB_ABORTED";
     break;
   case GLOB_NOMATCH:
+    // No error, because not matching isn't necessarily a problem.
+    // NOTE: This can be turned on to log overaggressive calls to glob().
+    // err_str = "nothing matched";
     break;
   case GLOB_NOSPACE:
     err_str = "GLOB_NOSPACE";
@@ -87,16 +97,23 @@ List<BigStr*>* glob(BigStr* pat, int flags) {
     throw Alloc<RuntimeError>(StrFromC(err_str));
   }
 
+  // http://stackoverflow.com/questions/3512414/does-this-pylist-appendlist-py-buildvalue-leak
   size_t n = results.gl_pathc;
   auto matches = NewList<BigStr*>();
-  for (size_t i = 0; i < n; i++) {
+
+  // Print array of results
+  size_t i;
+  for (i = 0; i < n; i++) {
     const char* m = results.gl_pathv[i];
     matches->append(StrFromC(m));
   }
   globfree(&results);
+
   return matches;
 }
 
+// Raises RuntimeError if the pattern is invalid.  TODO: Use a different
+// exception?
 List<int>* regex_search(BigStr* pattern, int cflags, BigStr* str, int eflags,
                         int pos) {
   cflags |= REG_EXTENDED;
@@ -109,10 +126,13 @@ List<int>* regex_search(BigStr* pattern, int cflags, BigStr* str, int eflags,
     char error_message[80];
     snprintf(error_message, 80, "Invalid regex %s (%s)", pattern->data_,
              error_desc);
+
     throw Alloc<ValueError>(StrFromC(error_message));
   }
+  // log("pat = %d, str = %d", len(pattern), len(str));
 
-  int num_groups = pat.re_nsub + 1;
+  int num_groups = pat.re_nsub + 1;  // number of captures
+
   List<int>* indices = NewList<int>();
   indices->reserve(num_groups * 2);
 
@@ -121,7 +141,8 @@ List<int>* regex_search(BigStr* pattern, int cflags, BigStr* str, int eflags,
       static_cast<regmatch_t*>(malloc(sizeof(regmatch_t) * num_groups));
   bool match = regexec(&pat, s + pos, num_groups, pmatch, eflags) == 0;
   if (match) {
-    for (int i = 0; i < num_groups; i++) {
+    int i;
+    for (i = 0; i < num_groups; i++) {
       int start = pmatch[i].rm_so;
       if (start != -1) {
         start += pos;
@@ -138,54 +159,79 @@ List<int>* regex_search(BigStr* pattern, int cflags, BigStr* str, int eflags,
 
   free(pmatch);
   regfree(&pat);
+
   if (!match) {
     return nullptr;
   }
+
   return indices;
 }
 
+// For ${//}, the number of groups is always 1, so we want 2 match position
+// results -- the whole regex (which we ignore), and then first group.
+//
+// For [[ =~ ]], do we need to count how many matches the user gave?
+
 const int NMATCH = 2;
 
+// Odd: This a Tuple2* not Tuple2 because it's Optional[Tuple2]!
 Tuple2<int, int>* regex_first_group_match(BigStr* pattern, BigStr* str,
                                           int pos) {
   regex_t pat;
   regmatch_t m[NMATCH];
+
+  // Could have been checked by regex_parse for [[ =~ ]], but not for glob
+  // patterns like ${foo/x*/y}.
 
   if (regcomp(&pat, pattern->data_, REG_EXTENDED) != 0) {
     throw Alloc<RuntimeError>(
         StrFromC("Invalid regex syntax (func_regex_first_group_match)"));
   }
 
-  int result = regexec(&pat, str->data_ + pos, NMATCH, m, 0);
+  // Match at offset 'pos'
+  int result = regexec(&pat, str->data_ + pos, NMATCH, m, 0 /*flags*/);
   regfree(&pat);
+
   if (result != 0) {
     return nullptr;
   }
 
+  // Assume there is a match
   regoff_t start = m[1].rm_so;
   regoff_t end = m[1].rm_eo;
-  return Alloc<Tuple2<int, int>>(pos + start, pos + end);
+  Tuple2<int, int>* tup = Alloc<Tuple2<int, int>>(pos + start, pos + end);
+
+  return tup;
 }
 
 int wcswidth(BigStr* s) {
+  // Behavior of mbstowcs() depends on LC_CTYPE
+
+  // Calculate length first
   int num_wide_chars = ::mbstowcs(NULL, s->data_, 0);
   if (num_wide_chars == -1) {
     throw Alloc<UnicodeError>(StrFromC("mbstowcs() 1"));
   }
 
+  // Allocate buffer
   int buf_size = (num_wide_chars + 1) * sizeof(wchar_t);
   wchar_t* wide_chars = static_cast<wchar_t*>(malloc(buf_size));
   DCHECK(wide_chars != nullptr);
 
+  // Convert to wide chars
   num_wide_chars = ::mbstowcs(wide_chars, s->data_, num_wide_chars);
   if (num_wide_chars == -1) {
-    free(wide_chars);
+    free(wide_chars);  // cleanup
+
     throw Alloc<UnicodeError>(StrFromC("mbstowcs() 2"));
   }
 
+  // Find number of columns
   int width = ::wcswidth(wide_chars, num_wide_chars);
   if (width == -1) {
-    free(wide_chars);
+    free(wide_chars);  // cleanup
+
+    // unprintable chars
     throw Alloc<UnicodeError>(StrFromC("wcswidth()"));
   }
 
@@ -206,6 +252,7 @@ int sleep_until_error(double seconds) {
   req.tv_sec = static_cast<time_t>(seconds);
   req.tv_nsec = static_cast<time_t>((seconds - req.tv_sec) * 1e9);
 
+  // Return 0 or errno
   int result = 0;
   if (nanosleep(&req, NULL) < 0) {
     result = errno;
@@ -214,14 +261,18 @@ int sleep_until_error(double seconds) {
 }
 
 BigStr* strsignal(int sig_num) {
+  // Validate signal number range
   if (sig_num < 1 || sig_num >= NSIG) {
     throw Alloc<ValueError>(StrFromC("signal number out of range"));
   }
 
   char* res = ::strsignal(sig_num);
+
+  // Return nullptr only if strsignal() fails (returns NULL)
   if (res == nullptr) {
     return nullptr;
   }
+
   return StrFromC(res);
 }
 
