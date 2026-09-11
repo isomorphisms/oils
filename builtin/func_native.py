@@ -6,7 +6,6 @@ from core import error
 from core import vm
 from frontend import typed_args
 from mycpp import mops
-from mycpp.mylib import NewDict
 
 import libc
 
@@ -44,7 +43,7 @@ def _Int(i):
 
 def _Props():
     # type: () -> Dict[str, value_t]
-    props = NewDict()  # type: Dict[str, value_t]
+    props = {}  # type: Dict[str, value_t]
     return props
 
 
@@ -469,7 +468,7 @@ class OpenAt(vm._Callable):
         errno_num, token = native_result
         if errno_num != 0:
             return _Err(errno_num)
-        is_directory = bool(flag_mask & OPEN_DIRECTORY)
+        is_directory = (flag_mask & OPEN_DIRECTORY) != 0
         return _Ok(_FileDescriptor(token, is_directory))
 
 
