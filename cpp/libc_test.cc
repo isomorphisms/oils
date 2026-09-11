@@ -155,7 +155,7 @@ TEST glob_test() {
 TEST fnmatch_test() {
   BigStr* s1 = (StrFromC("foo.py "))->strip();
   ASSERT(libc::fnmatch(StrFromC("*.py"), s1));
-  ASSERT(!libc::fnmatch(StrFromC("*.py"), StrFromC("foo.p")));
+  ASSERT(!libc::fnmatch(StrFromC("*(foo|bar).py"), StrFromC("foo.p")));
 
   // Unicode - ? is byte or code point?
   ASSERT(libc::fnmatch(StrFromC("_?_"), StrFromC("_x_")));
@@ -216,6 +216,20 @@ TEST grease_native_memory_test() {
   ASSERT_EQ_FMT(EINVAL, past_end->at0(), "%d");
 
   ASSERT_EQ_FMT(0, libc::grease_mprotect(handle, kGreaseProtRead), "%d");
+  ASSERT_EQ_FMT(EACCES,
+                libc::grease_mapping_write(handle, StrFromC("17"),
+                                            StrFromC("blocked")),
+                "%d");
+  Tuple2<int, BigStr*>* read_only =
+      libc::grease_mapping_read(handle, StrFromC("17"), StrFromC("8"));
+  ASSERT_EQ_FMT(0, read_only->at0(), "%d");
+  ASSERT(str_equals(StrFromC("pensieve"), read_only->at1()));
+
+  ASSERT_EQ_FMT(0, libc::grease_mprotect(handle, 0), "%d");
+  Tuple2<int, BigStr*>* unreadable =
+      libc::grease_mapping_read(handle, StrFromC("17"), StrFromC("8"));
+  ASSERT_EQ_FMT(EACCES, unreadable->at0(), "%d");
+
   ASSERT_EQ_FMT(0,
                 libc::grease_mprotect(handle,
                                       kGreaseProtRead | kGreaseProtWrite),
