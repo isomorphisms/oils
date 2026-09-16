@@ -2,6 +2,7 @@ from __future__ import print_function
 
 from _devbuild.gen.runtime_asdl import scope_e
 from _devbuild.gen.value_asdl import value, value_e, value_t
+from builtin import func_native
 from core.error import e_die
 from core import pyos
 from core import pyutil
@@ -322,3 +323,6 @@ def InitBuiltins(mem, version_str, defaults):
     # - JavaScript prints 'NaN' and 'Infinity', which is more stylized
     mem.builtins['NAN'] = value.Float(pyutil.nan())
     mem.builtins['INFINITY'] = value.Float(pyutil.infinity())
+
+    # Native Grease actions are an explicit object rather than ambient C FFI.
+    mem.builtins['native'] = func_native.MakeNativeObject()

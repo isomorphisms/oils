@@ -38,6 +38,34 @@ int sleep_until_error(double seconds);
 
 BigStr* strsignal(int sig_num);
 
+// Grease's first native Linux/libc vocabulary. These wrappers return errno
+// rather than exposing libc failure sentinels to Grease. Mapping and file
+// descriptor handles are opaque registry indices, never raw pointers or kernel
+// file descriptor numbers.
+Tuple2<int, int>* grease_mmap(BigStr* length, int protection,
+                              int mapping_flags, int file_handle,
+                              BigStr* offset);
+int grease_munmap(int mapping_handle);
+int grease_mprotect(int mapping_handle, int protection);
+int grease_msync(int mapping_handle, int sync_flags);
+
+Tuple2<int, BigStr*>* grease_mapping_read(int mapping_handle, BigStr* offset,
+                                          BigStr* length);
+int grease_mapping_write(int mapping_handle, BigStr* offset, BigStr* data);
+
+Tuple2<int, int>* grease_openat(int directory_handle, BigStr* path,
+                                int open_flags, int mode);
+int grease_close(int file_handle);
+int grease_linkat(int old_directory_handle, BigStr* old_path,
+                   int new_directory_handle, BigStr* new_path,
+                   bool follow_symlink);
+int grease_symlinkat(BigStr* target, int directory_handle, BigStr* path);
+int grease_unlinkat(int directory_handle, BigStr* path,
+                     bool remove_directory);
+
+BigStr* grease_errno_name(int errno_num);
+BigStr* grease_errno_message(int errno_num);
+
 }  // namespace libc
 
 // pylib/locale_.py
