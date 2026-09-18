@@ -86,16 +86,6 @@ jobs:
         with:
           job: dev-minimal
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
-          # Temporary upstream failure observed in the publisher-independent run.
-          allowed_task_failures: lint=123
-      - name: Upload failing Soil task log
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: soil-diagnostic-dev-minimal-${{ github.event.pull_request.head.sha || github.sha }}
-          path: _tmp/soil/logs/lint.txt
-          if-no-files-found: error
-          retention-days: 2
 
   interactive:
     runs-on: ubuntu-22.04
@@ -140,18 +130,6 @@ jobs:
         with:
           job: other-tests
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
-          # Temporary upstream failures; any other task/status remains fatal.
-          allowed_task_failures: oil-python-symbols=1,build-oils-repo=1
-      - name: Upload failing Soil task logs
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: soil-diagnostic-other-tests-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            _tmp/soil/logs/oil-python-symbols.txt
-            _tmp/soil/logs/build-oils-repo.txt
-          if-no-files-found: error
-          retention-days: 2
 
   ovm-tarball:
     runs-on: ubuntu-22.04
@@ -166,16 +144,6 @@ jobs:
         with:
           job: ovm-tarball
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
-          # Temporary upstream failure; exact task/status only.
-          allowed_task_failures: make-tarball=2
-      - name: Upload failing Soil task log
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: soil-diagnostic-ovm-tarball-${{ github.event.pull_request.head.sha || github.sha }}
-          path: _tmp/soil/logs/make-tarball.txt
-          if-no-files-found: error
-          retention-days: 2
 
   app-tests:
     runs-on: ubuntu-22.04

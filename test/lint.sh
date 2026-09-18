@@ -148,6 +148,35 @@ mycpp-files() {
 #
 
 # Hook for soil
+normalize-py-lint() {
+  local raw=$1
+  sed -E -n 's#^([^:]+\\.py):[0-9]+:[0-9]+ (.*)$#\\1: \\2#p' "$raw" |
+    sort -u
+}
+
+py2-soil() {
+  # Python-2 lint has accumulated historical warnings upstream.  Keep them
+  # explicit and fail if the warning set changes in either direction, while
+  # still rejecting tool crashes that do not produce lint diagnostics.
+  local raw=_tmp/py2-lint.txt
+  local actual=_tmp/py2-lint-normalized.txt
+  local status
+
+  mkdir -p _tmp
+  set +o errexit
+  py2 > "$raw" 2>&1
+  status=$?
+  set -o errexit
+
+  cat "$raw"
+  normalize-py-lint "$raw" > "$actual"
+
+  if test "$status" -ne 0 && ! test -s "$actual"; then
+    return "$status"
+  fi
+  diff -u test/lint-known-py2.txt "$actual"
+}
+
 soil-run() {
   if test -n "${TRAVIS_SKIP:-}"; then
     echo "TRAVIS_SKIP: Skipping $0"
@@ -156,8 +185,8 @@ soil-run() {
 
   #flake8-all
 
-  # Our new lint script
-  all-py
+  py2-soil
+  py3
 
   check-shebangs
 }

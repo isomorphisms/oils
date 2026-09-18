@@ -9,7 +9,7 @@ from mycpp import mops
 
 import libc
 
-from typing import Dict, List, Optional, cast
+from typing import Dict, List, cast
 
 
 PROT_READ = 1
