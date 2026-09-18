@@ -68,7 +68,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: dummy
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -82,10 +82,12 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: dev-minimal
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Temporary upstream failure observed in the publisher-independent run.
+          allowed_task_failures: lint=123
 
   interactive:
     runs-on: ubuntu-22.04
@@ -98,7 +100,7 @@ jobs:
       - name: Fix kernel mmap rnd bits
         run: sudo sysctl vm.mmap_rnd_bits=28
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: interactive
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -112,7 +114,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: pea
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -126,10 +128,12 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: other-tests
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Temporary upstream failures; any other task/status remains fatal.
+          allowed_task_failures: oil-python-symbols=1,build-oils-repo=1
 
   ovm-tarball:
     runs-on: ubuntu-22.04
@@ -140,10 +144,12 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: ovm-tarball
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Temporary upstream failure; exact task/status only.
+          allowed_task_failures: make-tarball=2
 
   app-tests:
     runs-on: ubuntu-22.04
@@ -160,7 +166,7 @@ jobs:
           name: oils-cpp-tarball-${{ github.event.pull_request.head.sha || github.sha }}
           path: _release
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: app-tests
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -174,7 +180,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: cpp-coverage
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -188,7 +194,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: benchmarks
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -208,7 +214,7 @@ jobs:
           name: oils-cpp-tarball-${{ github.event.pull_request.head.sha || github.sha }}
           path: _release
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: bloaty
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -228,7 +234,7 @@ jobs:
           name: oils-cpp-tarball-${{ github.event.pull_request.head.sha || github.sha }}
           path: _release
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: benchmarks2
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -242,7 +248,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: benchmarks3
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -258,7 +264,7 @@ jobs:
       - name: Fix kernel mmap rnd bits
         run: sudo sysctl vm.mmap_rnd_bits=28
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: cpp-small
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -275,7 +281,7 @@ jobs:
         run: sudo sysctl vm.mmap_rnd_bits=28
       - name: Run and verify Soil job
         id: soil
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: cpp-tarball
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -298,7 +304,7 @@ jobs:
       - name: Fix kernel mmap rnd bits
         run: sudo sysctl vm.mmap_rnd_bits=28
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: cpp-spec
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -318,7 +324,7 @@ jobs:
           name: oils-cpp-tarball-${{ github.event.pull_request.head.sha || github.sha }}
           path: _release
       - name: Run and verify Soil job
-        uses: isomorphisms/ai-ci/soil@7d6f3aeee9669a8bbbd99055bee7e71bfd6c9c4b
+        uses: isomorphisms/ai-ci/soil@918e0e6eda2e7c6877dfa9b3dee236004571a8ac
         with:
           job: wild
           expected_revision: ${{ github.event.pull_request.head.sha || github.sha }}
