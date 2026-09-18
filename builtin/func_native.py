@@ -35,6 +35,8 @@ OPEN_DIRECTORY = 128
 OPEN_NO_FOLLOW = 256
 OPEN_CLOSE_ON_EXEC = 512
 
+FALLOC_KEEP_SIZE = 1
+
 
 def _Int(i):
     # type: (int) -> value.Int
@@ -307,6 +309,26 @@ def _DefaultOpenFlags():
     return [value.Str('read-only')]
 
 
+def _FallocateFlags(items, blame):
+    # type: (List[value_t], loc_t) -> int
+    mask = 0
+    for name in _FlagStrings(items, blame):
+        if name == 'keep-size':
+            mask |= FALLOC_KEEP_SIZE
+        else:
+            raise error.TypeErrVerbose('Unknown fallocate flag %r' % name,
+                                       blame)
+    if mask != FALLOC_KEEP_SIZE:
+        raise error.TypeErrVerbose(
+            "fallocate currently requires the 'keep-size' flag", blame)
+    return mask
+
+
+def _DefaultFallocateFlags():
+    # type: () -> List[value_t]
+    return [value.Str('keep-size')]
+
+
 class Mmap(vm._Callable):
 
     def __init__(self):
@@ -472,6 +494,28 @@ class OpenAt(vm._Callable):
         return _Ok(_FileDescriptor(token, is_directory))
 
 
+class Fallocate(vm._Callable):
+
+    def __init__(self):
+        # type: () -> None
+        pass
+
+    def Call(self, rd):
+        # type: (typed_args.Reader) -> value_t
+        unused_self = rd.PosObj()
+        descriptor = rd.PosObj()
+        offset = rd.PosInt()
+        length = rd.PosInt()
+        flags = rd.NamedList('flags', _DefaultFallocateFlags())
+        rd.Done()
+
+        return _Status(
+            libc.grease_fallocate(
+                _DescriptorToken(descriptor, rd.LeftParenToken()),
+                _FallocateFlags(flags, rd.LeftParenToken()),
+                mops.ToStr(offset), mops.ToStr(length)))
+
+
 class Close(vm._Callable):
 
     def __init__(self):
@@ -564,6 +608,7 @@ def MakeNativeObject():
     methods['readMapping'] = value.BuiltinFunc(MappingRead())
     methods['writeMapping'] = value.BuiltinFunc(MappingWrite())
     methods['openat'] = value.BuiltinFunc(OpenAt())
+    methods['fallocate'] = value.BuiltinFunc(Fallocate())
     methods['close'] = value.BuiltinFunc(Close())
     methods['linkat'] = value.BuiltinFunc(LinkAt())
     methods['symlinkat'] = value.BuiltinFunc(SymlinkAt())
