@@ -150,7 +150,7 @@ mycpp-files() {
 # Hook for soil
 normalize-py-lint() {
   local raw=$1
-  sed -E -n 's#^([^:]+\\.py):[0-9]+:[0-9]+ (.*)$#\\1: \\2#p' "$raw" |
+  sed -E -n 's#^([^:]+\.py):[0-9]+:[0-9]+ (.*)$#\1: \2#p' "$raw" |
     sort -u
 }
 
