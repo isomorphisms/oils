@@ -94,6 +94,13 @@ curl-until-200() {
 for-cpp-tarball()  {
   local prefix=${1:-github-}
 
+  # Fork CI passes the exact producer artifact directly between GitHub jobs.
+  # Keep the remote publisher only as a fallback for legacy/upstream callers.
+  if test -s _release/oils-for-unix.tar; then
+    log 'Using pre-supplied _release/oils-for-unix.tar'
+    return 0
+  fi
+
   # There are now 3 tasks waiting for the cpp-tarball
   #   wild      - might want to wait 80 seconds
   #   app-tests - run clone, build, bash first
