@@ -183,6 +183,7 @@ const int kGreaseSyncSync = 1;
 const int kGreaseOpenReadOnly = 1;
 const int kGreaseOpenReadWrite = 4;
 const int kGreaseOpenDirectory = 128;
+const int kGreaseFallocateKeepSize = 1;
 
 TEST grease_native_memory_test() {
   Tuple2<int, int>* failed =
@@ -280,6 +281,30 @@ TEST grease_native_at_filesystem_test() {
   ASSERT_EQ_FMT(0, opened_file->at0(), "%d");
   int file_handle = opened_file->at1();
   ASSERT(file_handle > 0);
+
+  struct stat before_reserve;
+  ASSERT_EQ_FMT(0, stat(index_path, &before_reserve), "%d");
+  ASSERT_EQ_FMT(4096, static_cast<int>(before_reserve.st_size), "%d");
+
+  ASSERT_EQ_FMT(
+      0,
+      libc::grease_fallocate(file_handle, kGreaseFallocateKeepSize,
+                             StrFromC("4096"), StrFromC("1048576")),
+      "%d");
+
+  struct stat after_reserve;
+  ASSERT_EQ_FMT(0, stat(index_path, &after_reserve), "%d");
+  ASSERT_EQ_FMT(4096, static_cast<int>(after_reserve.st_size), "%d");
+  ASSERT(after_reserve.st_blocks > before_reserve.st_blocks);
+
+  ASSERT_EQ_FMT(EINVAL,
+                libc::grease_fallocate(file_handle, 0, StrFromC("4096"),
+                                       StrFromC("4096")),
+                "%d");
+  ASSERT_EQ_FMT(EINVAL,
+                libc::grease_fallocate(file_handle, kGreaseFallocateKeepSize,
+                                       StrFromC("-1"), StrFromC("4096")),
+                "%d");
 
   Tuple2<int, int>* mapped =
       libc::grease_mmap(StrFromC("4096"),

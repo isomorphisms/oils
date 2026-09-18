@@ -55,6 +55,8 @@ int grease_mapping_write(int mapping_handle, BigStr* offset, BigStr* data);
 
 Tuple2<int, int>* grease_openat(int directory_handle, BigStr* path,
                                 int open_flags, int mode);
+int grease_fallocate(int file_handle, int fallocate_flags, BigStr* offset,
+                     BigStr* length);
 int grease_close(int file_handle);
 int grease_linkat(int old_directory_handle, BigStr* old_path,
                    int new_directory_handle, BigStr* new_path,

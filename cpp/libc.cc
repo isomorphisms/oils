@@ -301,6 +301,8 @@ const int kOpenDirectory = 128;
 const int kOpenNoFollow = 256;
 const int kOpenCloseOnExec = 512;
 
+const int kFallocateKeepSize = 1;
+
 struct MappingSlot {
   void* address;
   size_t length;
@@ -543,6 +545,18 @@ static int NativeOpenFlags(int grease_flags, int* result) {
   return 0;
 }
 
+static int NativeFallocateFlags(int grease_flags, int* result) {
+  if (grease_flags != kFallocateKeepSize) {
+    return EINVAL;
+  }
+#ifdef FALLOC_FL_KEEP_SIZE
+  *result = FALLOC_FL_KEEP_SIZE;
+  return 0;
+#else
+  return ENOTSUP;
+#endif
+}
+
 Tuple2<int, int>* grease_mmap(BigStr* length_text, int protection,
                               int mapping_flags, int file_handle,
                               BigStr* offset_text) {
@@ -720,6 +734,43 @@ Tuple2<int, int>* grease_openat(int directory_handle, BigStr* path,
     return Alloc<Tuple2<int, int>>(ENOMEM, 0);
   }
   return Alloc<Tuple2<int, int>>(0, handle);
+}
+
+int grease_fallocate(int file_handle, int fallocate_flags, BigStr* offset_text,
+                     BigStr* length_text) {
+  int fd = -1;
+  int error_num = NativeFileFd(file_handle, &fd);
+  if (error_num != 0) {
+    return error_num;
+  }
+
+  off_t offset = 0;
+  error_num = ParseOffset(offset_text, &offset);
+  if (error_num != 0) {
+    return error_num;
+  }
+
+  off_t length = 0;
+  error_num = ParseOffset(length_text, &length);
+  if (error_num != 0) {
+    return error_num;
+  }
+
+  int native_flags = 0;
+  error_num = NativeFallocateFlags(fallocate_flags, &native_flags);
+  if (error_num != 0) {
+    return error_num;
+  }
+
+#if defined(__linux__)
+  errno = 0;
+  if (::fallocate(fd, native_flags, offset, length) == -1) {
+    return errno;
+  }
+  return 0;
+#else
+  return ENOTSUP;
+#endif
 }
 
 int grease_close(int file_handle) {
