@@ -548,6 +548,13 @@ run-tasks() {
       max_status=$status
     fi
 
+    if test "$status" -ne 0; then
+      echo
+      log "--- failing task log: $task_name ---"
+      cat "$log_path"
+      log "--- end failing task log: $task_name ---"
+    fi
+
     # Show the last line
     echo
     tsv-row status elapsed task script action result_html

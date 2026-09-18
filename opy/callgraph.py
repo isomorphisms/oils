@@ -87,12 +87,36 @@ def Disassemble(co):
 
 import sre_compile
 
+# These names are declared in pyext/libc.pyi and replaced by the translated
+# C++ libc boundary.  The CPython libc extension deliberately has no matching
+# implementation, so OPy's Python callgraph must treat them as external leaves
+# rather than falling back to __builtin__.
+_GREASE_TRANSLATED_LIBC = frozenset((
+    'grease_mmap',
+    'grease_munmap',
+    'grease_mprotect',
+    'grease_msync',
+    'grease_mapping_read',
+    'grease_mapping_write',
+    'grease_openat',
+    'grease_fallocate',
+    'grease_close',
+    'grease_linkat',
+    'grease_symlinkat',
+    'grease_unlinkat',
+    'grease_errno_name',
+    'grease_errno_message',
+))
+
 def _GetAttr(module, name):
   # Hack for bug in _fixup_range() !  (No longer in Python 3.6 head.)
   if module is sre_compile and name == 'l':
     return None
   # traceback.py has a hasattr() test
   if module is sys and name == 'tracebacklimit':
+    return None
+  if (getattr(module, '__name__', None) == 'libc' and
+      name in _GREASE_TRANSLATED_LIBC):
     return None
 
   try:

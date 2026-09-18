@@ -1,0 +1,36 @@
+asdl/asdl_main.py: local variable 'schema_filename' is assigned to but never used
+asdl/gen_cpp.py: local variable 'c_item_type' is assigned to but never used
+asdl/gen_cpp.py: local variable 'variant_name' is assigned to but never used
+benchmarks/pytrace.py: use of >> is invalid with print function
+benchmarks/time_.py: local variable 'start_time' is assigned to but never used
+benchmarks/uftrace_plugin.py: local variable 'func' is assigned to but never used
+build/ninja_lib.py: local variable 'bin_name' is assigned to but never used
+builtin/assign_osh.py: local variable 'was_printed' is assigned to but never used
+builtin/func_hay.py: local variable 'parse_opts' is assigned to but never used
+builtin/func_reflect.py: local variable 'code_str' is assigned to but never used
+builtin/func_reflect.py: local variable 'frag' is assigned to but never used
+builtin/func_reflect.py: local variable 'frame' is assigned to but never used
+builtin/func_reflect.py: local variable 'func_str' is assigned to but never used
+builtin/json_ysh.py: local variable 'arg_jw' is assigned to but never used
+builtin/meta_oils.py: redefinition of unused 'ui' from line 30
+builtin/method_other.py: local variable 'c' is assigned to but never used
+builtin/read_osh.py: local variable 'lexer' is assigned to but never used
+core/executor.py: local variable 'pid' is assigned to but never used
+core/main_loop.py: redefinition of unused 'cmd_eval' from line 23
+core/main_loop.py: redefinition of unused 'process' from line 18
+core/state.py: local variable 'success' is assigned to but never used
+data_lang/j8.py: list comprehension redefines 'b' from line 126
+doctools/cmark.py: local variable 'text' is assigned to but never used
+doctools/help_gen.py: local variable 'open_tag_right' is assigned to but never used
+doctools/oils_doc.py: local variable 'pre_start_pos' is assigned to but never used
+doctools/ref_check.py: local variable 'section_check' is assigned to but never used
+frontend/lexer.py: local variable 'original_pos' is assigned to but never used
+osh/glob_.py: list comprehension redefines '_' from line 265
+osh/glob_.py: local variable 'is_glob' is assigned to but never used
+osh/glob_.py: local variable 'skipdots' is assigned to but never used
+osh/split.py: list comprehension redefines 'buf' from line 65
+tools/ysh_ify.py: local variable 'UP_iterable' is assigned to but never used
+tools/ysh_ify.py: local variable 'has_array_index' is assigned to but never used
+tools/ysh_ify.py: local variable 'has_rhs' is assigned to but never used
+tools/ysh_ify.py: local variable 'lhs0' is assigned to but never used
+tools/ysh_ify.py: local variable 'op_id' is assigned to but never used
